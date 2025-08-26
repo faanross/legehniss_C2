@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/faanross/legehniss_C2/internal/composition"
 	"github.com/faanross/legehniss_C2/internal/config"
+	"github.com/miekg/dns"
 	"log"
 	"math/rand"
 	"time"
@@ -30,8 +31,10 @@ func RunLoop(ctx context.Context, comm composition.Agent, cfg *config.Config) er
 		case "https":
 			log.Fatalf("HTTPS has not yet been implemented: %v", err)
 		case "dns":
-			ipAddr := string(response)
-			log.Printf("Received response: IP=%v", ipAddr)
+
+			extractAndDisplayDNSResponse(response)
+			//ipAddr := string(response)
+			//log.Printf("Received response: IP=%v", ipAddr)
 
 		}
 
@@ -70,4 +73,32 @@ func CalculateSleepDuration(baseDelay time.Duration, jitterPercent int) time.Dur
 	}
 
 	return time.Duration(finalDuration)
+}
+
+func extractAndDisplayDNSResponse(response []byte) {
+
+	msg := new(dns.Msg)
+	err := msg.Unpack(response)
+	if err != nil {
+		log.Printf("Error unpacking DNS response: %v", err)
+		return
+	}
+
+	// Extract and log the answers
+	if len(msg.Answer) > 0 {
+		var ips []string
+		for _, answer := range msg.Answer {
+			// Check if it's an A record
+			if a, ok := answer.(*dns.A); ok {
+				ips = append(ips, a.A.String())
+			}
+		}
+		if len(ips) > 0 {
+			log.Printf("Received response: IP=%v", ips)
+		} else {
+			log.Printf("No A records found in response")
+		}
+	} else {
+		log.Printf("No answers in DNS response")
+	}
 }

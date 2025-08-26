@@ -53,9 +53,23 @@ func NewDNSAgent(cfg *config.Config) (*DNSAgent, error) {
 
 	fmt.Println("✅ DNS request configuration is valid!")
 
+	// (4) determine whether to use indicated address, or local resolver
+	var finalAddr string
+
+	if cfg.DNSUseSystemDefaults {
+		finalAddr, err = DetermineResolver()
+		if err != nil {
+			// if we fail, revert to using hardcoded address
+			fmt.Printf("Could not determine DNS resolver: %v\n", err)
+			finalAddr = cfg.ServerAddr
+		}
+	} else {
+		finalAddr = cfg.ServerAddr
+	}
+
 	return &DNSAgent{
 		request:    dnsRequest,
-		serverAddr: cfg.ServerAddr, // NOTE WE ARE NOW HARDCODING IT, BUT LATER WE WILL CONSIDER WHETHER OR NOT TO USE SYSTEM DEFAULTS TODO
+		serverAddr: finalAddr,
 	}, nil
 }
 
