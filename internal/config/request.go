@@ -2,7 +2,6 @@ package config
 
 // DNSRequest will hold the complete agent-side
 // configuration parsed from configs/request.yaml
-// It embeds 3 other structs, defined below
 type DNSRequest struct {
 	Header   Header   `yaml:"header"`
 	Question Question `yaml:"question"`

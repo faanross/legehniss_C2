@@ -9,7 +9,6 @@ import (
 )
 
 // BuildDNSRequest takes the parsed request data and translates it into a dns.Msg object.
-// It returns a pointer to a dns.Msg and an error if any values are invalid.
 func BuildDNSRequest(req config.DNSRequest) (*dns.Msg, error) {
 
 	msg := new(dns.Msg)
