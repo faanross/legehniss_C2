@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
+	"github.com/faanross/legehniss_C2/internal/request"
+	"github.com/faanross/legehniss_C2/internal/visualizer"
 	"gopkg.in/yaml.v3"
 	"net"
 	"os"
@@ -78,16 +80,13 @@ func (c *DNSAgent) Send(ctx context.Context) ([]byte, error) {
 	// (4) Visualize our packet to terminal
 	visualizer.VisualizePacket(packedMsg)
 
-	// (5) Combine IP and Port
-	address := fmt.Sprintf("%s:%d", c.request.Resolver.IP, c.request.Resolver.Port)
-
-	// (6) Resolve string address into a UDP address object
-	rAddr, err := net.ResolveUDPAddr("udp", address)
+	// (5) Resolve string address into a UDP address object
+	rAddr, err := net.ResolveUDPAddr("udp", c.serverAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
 	}
 
-	// (7) Establish UDP connection
+	// (6) Establish UDP connection
 	conn, err := net.DialUDP("udp", nil, rAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to resolver: %w", err)
@@ -95,10 +94,9 @@ func (c *DNSAgent) Send(ctx context.Context) ([]byte, error) {
 
 	defer conn.Close()
 
-	fmt.Printf("\n🚀 Sending packet to %s\n", address)
+	fmt.Printf("\n🚀 Sending packet to %s\n", c.serverAddr)
 
-	// Send packet
-
+	// (7) Send packet
 	_, err = conn.Write(packedMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send packet: %w", err)
