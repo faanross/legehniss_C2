@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"github.com/faanross/legehniss_C2/internal/dnsparser"
+	"github.com/faanross/legehniss_C2/internal/visualizer"
+	"github.com/miekg/dns"
 	"gopkg.in/yaml.v3"
 	"log"
 	"net"
@@ -210,7 +212,10 @@ func (w *worker) processRequest(request *DNSRequest) {
 	log.Printf("| DNS Packet Receiver |\n-> Worker ID: %s\n-> Processing Time: %s\n-> HEX: %s\n->",
 		w.id, time.Since(startTime), fmt.Sprintf("%x", request.Data))
 
-	// NEW PARSING CODE STARTS HERE
+	// use visualizer for ASCII and HEX representation
+	fmt.Println("| ASCII + HEX OVERVIEW: REQUEST DATA")
+	visualizer.VisualizePacket(request.Data)
+
 	// parse packet
 	dnsParser := dnsparser.NewDNSParser(w.server.serverConfig)
 	parsed := dnsParser.ParsePacket(request.Data, request.ClientAddr.String())
@@ -236,8 +241,110 @@ func (w *worker) processRequest(request *DNSRequest) {
 		//	"authoritative", parsed.Analysis.SupportedByServer)
 	}
 
-	// TODO  process query, send response
+	// Build and send the response if the query is valid
+	if parsed.Valid && parsed.Question != nil {
+		w.buildAndSendResponse(parsed, request.ClientAddr)
+	}
 
+}
+
+// buildAndSendResponse constructs and sends a DNS response.
+func (w *worker) buildAndSendResponse(parsedRequest *dnsparser.ParsedPacket, clientAddr *net.UDPAddr) {
+
+	// 1. Create a new response message based on the request.
+	responseMsg := new(dns.Msg)
+	responseMsg.SetReply(parsedRequest.Message)
+
+	// 2. Check if we are authoritative for the requested domain.
+	zone := w.server.serverConfig.FindZone(parsedRequest.Question.Name)
+	if zone != nil {
+		// We are authoritative! Set the Authoritative Answer (AA) flag.
+		responseMsg.Authoritative = true
+
+		// As per our config, refuse recursion if requested.
+		if w.server.serverConfig.Security.ResponsePolicies.RefuseRecursion {
+			responseMsg.RecursionAvailable = false
+		}
+
+		// 3. Find the corresponding records in our zone file.
+		// This is a simplified example for 'A' records.
+		// TODO implement Record Processing MAP, call specific functions for each record type case
+		switch parsedRequest.Question.Qtype {
+		case dns.TypeA:
+			for _, aRecord := range zone.ARecords {
+				if aRecord.Name == parsedRequest.Question.Name {
+					// Create a new A record from the config.
+					rr, err := dns.NewRR(fmt.Sprintf("%s %d IN A %s", aRecord.Name, aRecord.TTL, aRecord.IP))
+					if err == nil {
+						responseMsg.Answer = append(responseMsg.Answer, rr)
+					}
+				}
+			}
+			// We can add more cases here for AAAA, TXT CNAME, MX, etc.
+		}
+
+		// 4. If we found a zone but no records, it's an NXDOMAIN (Name Error).
+		if len(responseMsg.Answer) == 0 {
+			responseMsg.Rcode = dns.RcodeNameError
+		}
+
+	} else {
+		// 5. If we're not authoritative for the domain, we refuse the query.
+		responseMsg.Rcode = dns.RcodeRefused
+	}
+
+	// 6. Pack the response message into bytes.
+	responseBytes, err := responseMsg.Pack()
+	if err != nil {
+		log.Printf("Packing DNS response failed: %v", err)
+		//logging.Error("Failed to pack DNS response", "error", err)
+		return
+	}
+
+	// (7) Manually set Z value
+	if err := setServerZValue(responseBytes); err != nil {
+		log.Printf("SetServerZValue failed: %v", err)
+		//logging.Error("Failed to set Z value", "error", err)
+		return
+	}
+
+	// (8) Send the response back to the client.
+	_, err = w.server.conn.WriteToUDP(responseBytes, clientAddr)
+	if err != nil {
+		log.Printf("WriteToUDP failed: %v", err)
+		//logging.Error("Failed to send DNS response", "error", err)
+	} else {
+		log.Printf("Sent DNS response\nclient=%v\nrcode=%v", clientAddr.String(), dns.RcodeToString[responseMsg.Rcode])
+		//logging.Info("Sent DNS response",
+		//	"client", clientAddr.String(),
+		//	"rcode", dns.RcodeToString[responseMsg.Rcode])
+	}
+}
+
+// setServerZValue manually sets the Z flag value in a packed DNS response
+func setServerZValue(packedMsg []byte) error {
+	// Z value to set (will be dynamic later, for now just a local var)
+	zValue := uint8(3) // Example value, change as needed
+
+	// The DNS header is 12 bytes long
+	if len(packedMsg) < 12 {
+		return fmt.Errorf("packed message too short: %d bytes", len(packedMsg))
+	}
+
+	// Read current flags (bytes 2-3)
+	flags := uint16(packedMsg[2])<<8 | uint16(packedMsg[3])
+
+	// Clear existing Z bits (mask: 1111 1111 1000 1111 = 0xFF8F)
+	flags &= 0xFF8F
+
+	// Set new Z value (shift left by 4 to align with position)
+	flags |= uint16(zValue) << 4
+
+	// Write modified flags back
+	packedMsg[2] = byte(flags >> 8)
+	packedMsg[3] = byte(flags)
+
+	return nil
 }
 
 // Stop gracefully stops the DNS server

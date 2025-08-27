@@ -1,6 +1,7 @@
 package dnsparser
 
 import (
+	"encoding/binary"
 	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"github.com/miekg/dns"
@@ -49,7 +50,7 @@ func (p *DNSParser) ParsePacket(rawData []byte, clientAddr string) *ParsedPacket
 	result.Valid = true
 
 	// Step 2: Analyze header (+ does basic analysis on type, "normalcy" etc.)
-	result.Header = p.analyzeHeader(msg)
+	result.Header = p.analyzeHeader(msg, rawData)
 
 	// log header analysis
 	logAnalyzeHeader(result.Header)
@@ -69,7 +70,7 @@ func (p *DNSParser) ParsePacket(rawData []byte, clientAddr string) *ParsedPacket
 }
 
 // analyzeHeader provides detailed header analysis
-func (p *DNSParser) analyzeHeader(msg *dns.Msg) *HeaderAnalysis {
+func (p *DNSParser) analyzeHeader(msg *dns.Msg, rawData []byte) *HeaderAnalysis {
 
 	// these values all have library objects in miekg/dns (all except z)
 	analysis := &HeaderAnalysis{
@@ -88,9 +89,12 @@ func (p *DNSParser) analyzeHeader(msg *dns.Msg) *HeaderAnalysis {
 	}
 
 	// Extract Z flag from raw header since miekg/dns doesn't expose it
-	if len(p.getRawHeader()) >= 4 {
-		// Z flag is bits 4-6 of the flags field
-		flags := uint16(p.getRawHeader()[2])<<8 | uint16(p.getRawHeader()[3])
+	// DNS header is 12 bytes, flags are in bytes 2-3
+	if len(rawData) >= 4 {
+		// Read the flags field (bytes 2-3) as a 16-bit big-endian value
+		flags := binary.BigEndian.Uint16(rawData[2:4])
+		// Z flag is bits 9-11 (counting from 0 at the left/MSB)
+		// Which means we need to shift right by 4 and mask with 0x07
 		analysis.Z = uint8((flags >> 4) & 0x07)
 	}
 
@@ -102,7 +106,7 @@ func (p *DNSParser) analyzeHeader(msg *dns.Msg) *HeaderAnalysis {
 	// Analysis flags
 	analysis.IsQuery = !analysis.QR
 	analysis.IsResponse = analysis.QR
-	analysis.IsStandardQuery = analysis.Opcode == dns.OpcodeQuery
+	analysis.IsStandardQuery = analysis.IsQuery && analysis.Opcode == dns.OpcodeQuery
 	analysis.HasNonZeroZ = analysis.Z != 0
 	analysis.IsRecursionDesired = analysis.RD
 
@@ -262,7 +266,7 @@ func (p *DNSParser) analyzePacket(msg *dns.Msg, header *HeaderAnalysis, question
 func logAnalyzePacket(analysis *PacketAnalysis) {
 
 	log.Printf("DNS High-Level Packet Analysis\npacket_type=%v\nis_well_formed=%v\nis_standard=%v\nhad_edns=%v\nsupported_by_server=%v\nissues=%v\nwarnings=%v", analysis.PacketType, analysis.IsWellFormed, analysis.IsStandard, analysis.HasEdns, analysis.SupportedByServer, analysis.Issues, analysis.Warnings)
-	
+
 	//logging.Debug("DNS High-Level Packet Analysis",
 	//	"packet_type", analysis.PacketType,
 	//	"is_well_formed", analysis.IsWellFormed,
