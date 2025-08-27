@@ -30,7 +30,11 @@ func NewServer(cfg *config.Config) (Server, error) {
 	case "https":
 		return nil, fmt.Errorf("HTTPS not yet implemented")
 	case "dns":
-		return dns.NewDNSServer(cfg), nil
+		agent, err := dns.NewDNSServer(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating DNS agent: %w", err)
+		}
+		return agent, nil
 	case "wss":
 		return nil, fmt.Errorf("WSS not yet implemented")
 	default:
