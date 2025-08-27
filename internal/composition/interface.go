@@ -11,8 +11,8 @@ type Agent interface {
 // Server defines the contract for servers
 type Server interface {
 	// Start begins listening for requests
-	Start() error
+	Start(ctx context.Context) error
 
 	// Stop gracefully shuts down the server
-	Stop() error
+	Stop(ctx context.Context) error
 }

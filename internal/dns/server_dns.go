@@ -1,10 +1,10 @@
 package dns
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
-	"github.com/miekg/dns"
 	"gopkg.in/yaml.v3"
 	"log"
 	"net"
@@ -90,57 +90,154 @@ func NewDNSServer(cfg *config.Config, sCfg *config.DNSServerConfig) (*DNSServer,
 }
 
 // Start implements Server.Start for DNS
-func (s *DNSServer) Start() error {
-	// Create and configure the DNS server
-	s.server = &dns.Server{
-		Addr:    s.addr,
-		Net:     "udp",
-		Handler: dns.HandlerFunc(s.handleDNSRequest),
+func (s *DNSServer) Start(ctx context.Context) error {
+	// Resolve UDP address
+	addr, err := net.ResolveUDPAddr("udp", s.serverConfig.Server.GetAddress())
+	if err != nil {
+		return fmt.Errorf("failed to resolve UDP address: %w", err)
 	}
 
-	// Start server
-	return s.server.ListenAndServe()
-}
-
-// handleDNSRequest is our DNS Server's handler
-func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
-	// Create response message
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Authoritative = true
-
-	// Process each question
-	for _, question := range r.Question {
-		// We only handle A records for now
-		if question.Qtype != dns.TypeA {
-			continue
-		}
-
-		// Log the query
-		log.Printf("DNS query for: %s", question.Name)
-
-		// For now, always return 42.42.42.42
-		rr := &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   question.Name,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    300,
-			},
-			A: net.ParseIP("42.42.42.42"),
-		}
-		m.Answer = append(m.Answer, rr)
+	// Start listening
+	s.conn, err = net.ListenUDP("udp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to start UDP listener: %w", err)
 	}
 
-	// Send response
-	w.WriteMsg(m)
+	log.Printf("| UDP server started |\n-> Address: %s\n->Workers: %d\n", addr.String(), len(s.workers))
+
+	// Start worker goroutines
+	for i := range s.workers {
+		s.wg.Add(1)
+		go s.workers[i].run()
+	}
+
+	// Start accepting connections
+	s.wg.Add(1)
+	s.acceptLoop(ctx)
+
+	return nil
 }
 
-// Stop implements Server.Stop for DNS
-func (s *DNSServer) Stop() error {
-	if s.server == nil {
+// acceptLoop handles incoming UDP packets
+func (s *DNSServer) acceptLoop(ctx context.Context) {
+	defer s.wg.Done()
+
+	buffer := make([]byte, s.serverConfig.Server.MaxPacketSize)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Accept loop stopping due to context cancellation")
+			return
+		case <-s.shutdown:
+			log.Printf("Accept loop stopping due to shutdown signal")
+			return
+		default:
+			// Set read timeout
+			readTimeout := time.Duration(s.serverConfig.Server.ReadTimeout)
+
+			err := s.conn.SetReadDeadline(time.Now().Add(readTimeout))
+
+			if err != nil {
+				log.Printf("SetReadDeadline failed: %v", err)
+			}
+
+			// Read packet
+			n, clientAddr, err := s.conn.ReadFromUDP(buffer)
+			if err != nil {
+				// Check if it's a timeout (expected during shutdown)
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					continue
+				}
+				log.Printf("ReadFromUDP failed: %v", err)
+				continue
+			}
+
+			// Create request
+			request := &DNSRequest{
+				Data:       make([]byte, n),
+				ClientAddr: clientAddr,
+				ReceivedAt: time.Now(),
+			}
+
+			// copy data from packet to internal buffer
+			copy(request.Data, buffer[:n])
+
+			// Log the incoming request
+			log.Printf("| ReadFromUDP Received |\n-> Client: %s\n-> Size: %d\n-> Data_Preview: %s\n ",
+				clientAddr.String(), n, fmt.Sprintf("%x", request.Data[:min(n, 16)]))
+
+			// Distribute to workers using round-robin
+			workerIndex := len(request.Data) % len(s.workers)
+			select {
+			case s.workers[workerIndex].requests <- request:
+				// Request queued successfully
+			default:
+				// Worker queue is full, log and drop
+				log.Printf("| Dropping request to worker #%d because it has been full", workerIndex)
+			}
+		}
+	}
+}
+
+// worker.run processes DNS requests
+func (w *worker) run() {
+	defer w.server.wg.Done()
+
+	log.Printf("| Worker #%s started", w.id)
+
+	for {
+		select {
+		case <-w.server.shutdown:
+			log.Printf("| Worker #%s stopped", w.id)
+			return
+
+		case request := <-w.requests:
+			w.processRequest(request)
+		}
+	}
+}
+
+// processRequest represents a single worker handling a single DNS request
+func (w *worker) processRequest(request *DNSRequest) {
+	startTime := time.Now()
+
+	log.Printf("| Processing DNS request |\n-> Worker ID: %s\n-> Client: %s\n-> Packet Size: %d\n->",
+		w.id, request.ClientAddr.String(), len(request.Data))
+
+	log.Printf("| DNS Packet Receiver |\n-> Worker ID: %s\n-> Processing Time: %s\n-> HEX: %s\n->",
+		w.id, time.Since(startTime), fmt.Sprintf("%x", request.Data))
+
+	// TODO: Parse packet, process query, send response
+
+}
+
+// Stop gracefully stops the DNS server
+func (s *DNSServer) Stop(ctx context.Context) error {
+	log.Printf("DNS server stopping...")
+
+	// Signal shutdown
+	close(s.shutdown)
+
+	// Close UDP connection
+	if s.conn != nil {
+		s.conn.Close()
+	}
+
+	// Wait for workers to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Printf("DNS server shutdown complete")
 		return nil
+	case <-ctx.Done():
+		log.Printf("DNS server shutdown timed out")
+		return ctx.Err()
 	}
-	log.Println("Stopping DNS server...")
-	return s.server.Shutdown()
 }

@@ -8,47 +8,73 @@ import (
 
 // ConfigLoader handles loading and validating configuration files
 type ConfigLoader struct {
-	configPath string
-	config     *DNSServerConfig
+	serverConfigPath string
+	mainConfigPath   string
+	serverConfig     *DNSServerConfig
+	mainConfig       *Config
 }
 
 // NewConfigLoader is ConfigLoader's constructor
-func NewConfigLoader(configPath string) *ConfigLoader {
+func NewConfigLoader(serverPath string, mainPath string) *ConfigLoader {
 	return &ConfigLoader{
-		configPath: configPath,
+		serverConfigPath: serverPath,
+		mainConfigPath:   mainPath,
 	}
 }
 
-// Load reads, validates, and parses/unmarshalls the configuration file
-func (cl *ConfigLoader) Load() (*DNSServerConfig, error) {
+// Load reads, validates, and parses/unmarshalls both the SERVER and MAIN configuration files
+func (cl *ConfigLoader) Load() (*DNSServerConfig, *Config, error) {
 
+	// A. First just handle the DNS Server Config
 	// Step 1: Ensure that config file exists
-	if _, err := os.Stat(cl.configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("configuration file not found: %s", cl.configPath)
+	if _, err := os.Stat(cl.serverConfigPath); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("configuration file not found: %s", cl.serverConfigPath)
 	}
 
 	// Step 2: Read the file
-	yamlData, err := os.ReadFile(cl.configPath)
+	yamlServerData, err := os.ReadFile(cl.serverConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read configuration file: %w", err)
+		return nil, nil, fmt.Errorf("failed to read configuration file: %w", err)
 	}
 
 	// Step 3: Parse YAML
-	var config DNSServerConfig
-	if err := yaml.Unmarshal(yamlData, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML configuration: %w", err)
+	var serverConfig DNSServerConfig
+	if err := yaml.Unmarshal(yamlServerData, &serverConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse YAML configuration: %w", err)
 	}
 
 	// Step 4: Apply defaults for missing values
-	cl.applyDefaults(&config)
+	cl.applyDefaults(&serverConfig)
 
 	// Step 5: Validate the configuration
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	if err := serverConfig.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	cl.config = &config
-	return &config, nil
+	// ------------------------------------------------------------------------------
+
+	// B. Now handle the Main Config
+	// Step 1: Ensure that config file exists
+	if _, err := os.Stat(cl.mainConfigPath); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("configuration file not found: %s", cl.mainConfigPath)
+	}
+
+	// Step 2: Read the file
+	yamlMainData, err := os.ReadFile(cl.mainConfigPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read configuration file: %w", err)
+	}
+
+	// Step 3: Parse YAML
+	var mainConfig Config
+	if err := yaml.Unmarshal(yamlMainData, &mainConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse YAML configuration: %w", err)
+	}
+
+	cl.serverConfig = &serverConfig
+	cl.mainConfig = &mainConfig
+
+	return &serverConfig, &mainConfig, nil
 
 }
 
@@ -138,26 +164,26 @@ func (cl *ConfigLoader) applyZoneDefaults(zone *ZoneConfig) {
 	}
 }
 
-// PrintConfiguration displays the loaded configuration in a human-readable format
+// PrintConfiguration displays the loaded server configuration in a human-readable format
 func (cl *ConfigLoader) PrintConfiguration() {
-	if cl.config == nil {
+	if cl.serverConfig == nil {
 		fmt.Println("No configuration loaded")
 		return
 	}
 
 	fmt.Println("=== DNS Server Configuration ===")
-	fmt.Printf("Server Address: %s\n", cl.config.Server.GetAddress())
-	fmt.Printf("Max Workers: %d\n", cl.config.Server.MaxWorkers)
-	fmt.Printf("Packet Size Limit: %d bytes\n", cl.config.Server.MaxPacketSize)
+	fmt.Printf("Server Address: %s\n", cl.serverConfig.Server.GetAddress())
+	fmt.Printf("Max Workers: %d\n", cl.serverConfig.Server.MaxWorkers)
+	fmt.Printf("Packet Size Limit: %d bytes\n", cl.serverConfig.Server.MaxPacketSize)
 
-	readTimeout, writeTimeout := cl.config.Server.GetTimeouts()
+	readTimeout, writeTimeout := cl.serverConfig.Server.GetTimeouts()
 	fmt.Printf("Timeouts: Read=%v, Write=%v\n", readTimeout, writeTimeout)
 
-	fmt.Printf("Log Level: %s\n", cl.config.Logging.Level)
-	fmt.Printf("Log Format: %s\n", cl.config.Logging.Format)
+	fmt.Printf("Log Level: %s\n", cl.serverConfig.Logging.Level)
+	fmt.Printf("Log Format: %s\n", cl.serverConfig.Logging.Format)
 
-	fmt.Printf("\nConfigured Zones: %d\n", len(cl.config.Zones))
-	for i, zone := range cl.config.Zones {
+	fmt.Printf("\nConfigured Zones: %d\n", len(cl.serverConfig.Zones))
+	for i, zone := range cl.serverConfig.Zones {
 		fmt.Printf("  %d. %s (%s)\n", i+1, zone.Name, zone.Description)
 		fmt.Printf("     A Records: %d, AAAA Records: %d, CNAME Records: %d\n",
 			len(zone.ARecords), len(zone.AAAARecords), len(zone.CNAMERecords))
@@ -166,22 +192,22 @@ func (cl *ConfigLoader) PrintConfiguration() {
 	}
 
 	fmt.Printf("\nSecurity Settings:\n")
-	fmt.Printf("  Rate Limiting: %t\n", cl.config.Security.RateLimiting.Enabled)
-	fmt.Printf("  Refuse Recursion: %t\n", cl.config.Security.ResponsePolicies.RefuseRecursion)
+	fmt.Printf("  Rate Limiting: %t\n", cl.serverConfig.Security.RateLimiting.Enabled)
+	fmt.Printf("  Refuse Recursion: %t\n", cl.serverConfig.Security.ResponsePolicies.RefuseRecursion)
 	fmt.Printf("  TTL Range: %d - %d seconds\n",
-		cl.config.Security.ResponsePolicies.MinimumTTL,
-		cl.config.Security.ResponsePolicies.MaximumTTL)
+		cl.serverConfig.Security.ResponsePolicies.MinimumTTL,
+		cl.serverConfig.Security.ResponsePolicies.MaximumTTL)
 
 	fmt.Println("================================")
 }
 
 // ValidateZoneConsistency performs advanced validation checks
 func (cl *ConfigLoader) ValidateZoneConsistency() error {
-	if cl.config == nil {
+	if cl.serverConfig == nil {
 		return fmt.Errorf("no configuration loaded")
 	}
 
-	for _, zone := range cl.config.Zones {
+	for _, zone := range cl.serverConfig.Zones {
 		if err := cl.validateZoneConsistency(&zone); err != nil {
 			return fmt.Errorf("zone %s consistency check failed: %w", zone.Name, err)
 		}
