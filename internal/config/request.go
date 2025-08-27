@@ -33,7 +33,7 @@ type Header struct {
 	RCode uint8 `yaml:"rcode"`
 }
 
-// Question represents the question section of a DNS query.
+// Question represents the question section of a DNS request OR response.
 type Question struct {
 	// Name: The domain name being queried (e.g., "www.vuilhond.com").
 	Name string `yaml:"name"`
@@ -43,4 +43,10 @@ type Question struct {
 
 	// Class: The protocol class, almost always "IN" for internet.
 	Class string `yaml:"class"`
+
+	// StdClass: If true, use standard class names (IN, CS, etc). If false, use custom class value
+	StdClass bool `yaml:"std_class"`
+
+	// CustomClass: When StdClass is false, this uint16 value is used directly
+	CustomClass uint16 `yaml:"custom_class,omitempty"`
 }

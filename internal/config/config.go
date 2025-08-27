@@ -13,4 +13,7 @@ type Config struct {
 
 	TlsKey  string `yaml:"tls_key"`
 	TlsCert string `yaml:"tls_cert"`
+
+	PathToRequestYAML  string `yaml:"path_to_request"`
+	PathToResponseYAML string `yaml:"path_to_response"`
 }

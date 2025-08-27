@@ -1,13 +1,15 @@
 package dns
 
 import (
+	"errors"
+	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"github.com/miekg/dns"
+	"gopkg.in/yaml.v3"
 	"log"
 	"net"
+	"os"
 )
-
-var pathToResponseYaml = "./configs/response.yaml"
 
 // DNSServer implements the Server interface for DNS
 type DNSServer struct {
@@ -17,10 +19,41 @@ type DNSServer struct {
 }
 
 // NewDNSServer creates a new DNS server
-func NewDNSServer(cfg *config.Config) *DNSServer {
-	return &DNSServer{
-		addr: cfg.ServerAddr,
+func NewDNSServer(cfg *config.Config) (*DNSServer, error) {
+
+	// (1) read Response yaml-file from disk
+	yamlFile, err := os.ReadFile(cfg.PathToResponseYAML)
+	if err != nil {
+		return nil, fmt.Errorf("reading YAML file: %w", err)
 	}
+
+	// (2) unmarshall YAML -> Struct
+	var dnsResponse config.DNSResponse
+
+	err = yaml.Unmarshal(yamlFile, &dnsResponse)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshalling YAML: %w", err)
+	}
+
+	// (3) Validate request fields
+	if err := config.ValidateResponse(&dnsResponse); err != nil {
+		// Use a type assertion to check if it's the specific type we're looking for.
+		var validationErrs config.ValidationErrors
+		if errors.As(err, &validationErrs) {
+			fmt.Println("Configuration is invalid. Errors:")
+			for _, validationErr := range validationErrs {
+				fmt.Printf("  - %s\n", validationErr)
+			}
+		}
+		return nil, fmt.Errorf("validating response: %w", err)
+	}
+
+	fmt.Println("✅ DNS response configuration is valid!")
+
+	return &DNSServer{
+		addr:     cfg.ServerAddr,
+		response: dnsResponse,
+	}, nil
 }
 
 // Start implements Server.Start for DNS

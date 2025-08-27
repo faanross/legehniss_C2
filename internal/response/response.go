@@ -37,9 +37,17 @@ func BuildDNSResponse(resp config.DNSResponse) (*dns.Msg, error) {
 		return nil, fmt.Errorf("invalid question type: %s", resp.Question.Type)
 	}
 
-	qClass, ok := config.QClassMap[resp.Question.Class]
-	if !ok {
-		return nil, fmt.Errorf("invalid question class: %s", resp.Question.Class)
+	var qClass uint16
+	if resp.Question.StdClass {
+		// Standard class mode - look up in map
+		var ok bool
+		qClass, ok = config.QClassMap[resp.Question.Class]
+		if !ok {
+			return nil, fmt.Errorf("invalid question class: %s", resp.Question.Class)
+		}
+	} else {
+		// Custom class mode - use the raw value
+		qClass = resp.Question.CustomClass
 	}
 
 	// For all the remaining fields we can directly use the struct field values

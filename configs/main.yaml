@@ -12,3 +12,6 @@ protocol: "dns"
 
 tls_key: "./certs/server.key"
 tls_cert: "./certs/server.crt"
+
+path_to_request: "./configs/request.yaml"
+path_to_response: "./configs/response.yaml"

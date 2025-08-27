@@ -36,5 +36,11 @@ question:
   # type: The type of DNS record to query for.
   type: "A"
 
-  # class: The class of the query. For internet addresses, this is always "IN".
+  # std_class: If true, use standard class names. If false, use custom_class value
+  std_class: true
+
+  # class: Used when std_class is true (standard values: IN, CS, CH, HS, NO, AN)
   class: "IN"
+
+  # custom_class: Used when std_class is false (any value 0-65535)
+  custom_class: 12345

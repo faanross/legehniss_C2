@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-var pathToRequestYaml = "./configs/request.yaml"
-
 // DNSAgent implements the CommunicatorAgent interface for DNS
 type DNSAgent struct {
 	request    config.DNSRequest
@@ -25,7 +23,7 @@ type DNSAgent struct {
 func NewDNSAgent(cfg *config.Config) (*DNSAgent, error) {
 
 	// (1) read Request yaml-file from disk
-	yamlFile, err := os.ReadFile(pathToRequestYaml)
+	yamlFile, err := os.ReadFile(cfg.PathToRequestYAML)
 	if err != nil {
 		return nil, fmt.Errorf("reading YAML file: %w", err)
 	}

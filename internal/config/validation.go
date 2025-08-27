@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -30,6 +31,22 @@ func (c *Config) ValidateMainConfig() error {
 
 	if c.TlsKey == "" {
 		return fmt.Errorf("tls cert cannot be empty")
+	}
+
+	if c.PathToRequestYAML == "" {
+		return fmt.Errorf("yaml request config cannot be empty")
+	}
+
+	if _, err := os.Stat(c.PathToRequestYAML); os.IsNotExist(err) {
+		return fmt.Errorf("request YAML file does not exist: %s", c.PathToRequestYAML)
+	}
+
+	if c.PathToResponseYAML == "" {
+		return fmt.Errorf("yaml response config cannot be empty")
+	}
+
+	if _, err := os.Stat(c.PathToResponseYAML); os.IsNotExist(err) {
+		return fmt.Errorf("response YAML file does not exist: %s", c.PathToResponseYAML)
 	}
 
 	if c.Protocol != "https" && c.Protocol != "wss" && c.Protocol != "dns" {
@@ -82,8 +99,11 @@ func ValidateRequest(dnsRequest *DNSRequest) error {
 	}
 
 	// make sure Question.Class appears in our QClassMap
-	if _, ok := QClassMap[dnsRequest.Question.Class]; !ok {
-		validateErrs = append(validateErrs, fmt.Errorf("invalid question class: %s", dnsRequest.Question.Class))
+	if dnsRequest.Question.StdClass {
+		// Standard class mode - check if it's in our map
+		if _, ok := QClassMap[dnsRequest.Question.Class]; !ok {
+			validateErrs = append(validateErrs, fmt.Errorf("invalid standard question class: %s", dnsRequest.Question.Class))
+		}
 	}
 
 	if len(validateErrs) > 0 {
@@ -114,8 +134,12 @@ func ValidateResponse(dnsResponse *DNSResponse) error {
 		validateErrs = append(validateErrs, fmt.Errorf("invalid question type: %s", dnsResponse.Question.Type))
 	}
 
-	if _, ok := QClassMap[dnsResponse.Question.Class]; !ok {
-		validateErrs = append(validateErrs, fmt.Errorf("invalid question class: %s", dnsResponse.Question.Class))
+	// make sure Question.Class appears in our QClassMap
+	if dnsResponse.Question.StdClass {
+		// Standard class mode - check if it's in our map
+		if _, ok := QClassMap[dnsResponse.Question.Class]; !ok {
+			validateErrs = append(validateErrs, fmt.Errorf("invalid standard question class: %s", dnsResponse.Question.Class))
+		}
 	}
 
 	// ANSWER SECTION VALIDATION - handle multiple answers
