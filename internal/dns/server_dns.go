@@ -9,13 +9,33 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
+	"time"
 )
 
 // DNSServer implements the Server interface for DNS
 type DNSServer struct {
-	addr     string
-	server   *dns.Server
-	response config.DNSResponse
+	serverConfig config.ServerConfig
+	response     config.DNSResponse
+	conn         *net.UDPConn
+	workers      []worker
+	shutdown     chan struct{}
+	wg           sync.WaitGroup
+}
+
+// worker represents a goroutine that processes DNS queries
+// the amount can be set in ServerConfig.MaxWorkers
+type worker struct {
+	id       string
+	server   *DNSServer
+	requests chan *DNSRequest
+}
+
+// DNSRequest represents an incoming DNS query
+type DNSRequest struct {
+	Data       []byte
+	ClientAddr *net.UDPAddr
+	ReceivedAt time.Time
 }
 
 // NewDNSServer creates a new DNS server

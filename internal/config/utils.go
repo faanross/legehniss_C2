@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -39,4 +40,9 @@ func (c *DNSServerConfig) FindZone(domain string) *ZoneConfig {
 // IsAuthoritative checks if this server is authoritative for a domain
 func (c *DNSServerConfig) IsAuthoritative(domain string) bool {
 	return c.FindZone(domain) != nil
+}
+
+// GetAddress returns the server's bind address in "host:port" format
+func (s *ServerConfig) GetAddress() string {
+	return fmt.Sprintf("%s:%d", s.BindAddress, s.Port)
 }

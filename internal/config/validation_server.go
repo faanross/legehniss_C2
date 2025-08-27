@@ -36,6 +36,20 @@ func (c *DNSServerConfig) Validate() error {
 // Validate checks if server configuration is valid
 func (s *ServerConfig) Validate() error {
 
+	// Validate bind address
+	if s.BindAddress == "" {
+		return fmt.Errorf("bind_address cannot be empty")
+	}
+
+	if ip := net.ParseIP(s.BindAddress); ip == nil {
+		return fmt.Errorf("bind_address '%s' is not a valid IP address", s.BindAddress)
+	}
+
+	// Validate port
+	if s.Port < 1 || s.Port > 65535 {
+		return fmt.Errorf("port %d is not in valid range (1-65535)", s.Port)
+	}
+	
 	// Validate worker count
 	if s.MaxWorkers < 1 {
 		return fmt.Errorf("max_workers must be at least 1, got %d", s.MaxWorkers)
