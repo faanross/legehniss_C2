@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/faanross/legehniss_C2/internal/config"
+	"github.com/faanross/legehniss_C2/internal/dnsparser"
 	"gopkg.in/yaml.v3"
 	"log"
 	"net"
@@ -209,7 +210,33 @@ func (w *worker) processRequest(request *DNSRequest) {
 	log.Printf("| DNS Packet Receiver |\n-> Worker ID: %s\n-> Processing Time: %s\n-> HEX: %s\n->",
 		w.id, time.Since(startTime), fmt.Sprintf("%x", request.Data))
 
-	// TODO: Parse packet, process query, send response
+	// NEW PARSING CODE STARTS HERE
+	// parse packet
+	dnsParser := dnsparser.NewDNSParser(w.server.serverConfig)
+	parsed := dnsParser.ParsePacket(request.Data, request.ClientAddr.String())
+
+	// Log detailed analysis for interesting packets
+	if !parsed.Valid || len(parsed.Analysis.Issues) > 0 || len(parsed.Analysis.Warnings) > 0 {
+		log.Printf("Packet analysis found issues\nworker_id=%v\nvalid=%v\nissues=%v\nwarnings=%v", w.id, parsed.Valid, parsed.Analysis.Issues, parsed.Analysis.Warnings)
+		//logging.Warn("Packet analysis found issues",
+		//	"worker_id", w.id,
+		//	"valid", parsed.Valid,
+		//	"issues", parsed.Analysis.Issues,
+		//	"warnings", parsed.Analysis.Warnings)
+	}
+
+	// Log query details if it's a valid query
+	if parsed.Valid && parsed.Question != nil {
+		log.Printf("DNS Query details\nworker_id=%v\ndomain=%v\ntype=%v\nclass=%v\nauthoritative=%v", w.id, parsed.Question.Name, parsed.Question.QtypeString, parsed.Question.QclassString, parsed.Analysis.SupportedByServer)
+		//logging.Info("DNS Query details",
+		//	"worker_id", w.id,
+		//	"domain", parsed.Question.Name,
+		//	"type", parsed.Question.QtypeString,
+		//	"class", parsed.Question.QclassString,
+		//	"authoritative", parsed.Analysis.SupportedByServer)
+	}
+
+	// TODO  process query, send response
 
 }
 
