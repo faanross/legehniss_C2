@@ -2,6 +2,14 @@ package config
 
 import "github.com/miekg/dns"
 
+// limit constants
+const (
+	MaxDomainNameLength = 253
+	MaxLabelLength      = 63
+	MaxTTL              = 2147483647 // 2^31 - 1, max signed 32-bit integer
+	MaxTXTRecordLength  = 255
+)
+
 var OpCodeMap = map[string]int{
 	"QUERY":    dns.OpcodeQuery,
 	"IQUERY":   dns.OpcodeIQuery,
@@ -108,4 +116,18 @@ var QTypeMap = map[string]uint16{
 	"AXFR": dns.TypeAXFR,
 	"IXFR": dns.TypeIXFR,
 	"OPT":  dns.TypeOPT,
+}
+
+var RCodeMap = map[string]int{
+	"NOERROR":  dns.RcodeSuccess,
+	"FORMERR":  dns.RcodeFormatError,
+	"SERVFAIL": dns.RcodeServerFailure,
+	"NXDOMAIN": dns.RcodeNameError,
+	"NOTIMP":   dns.RcodeNotImplemented,
+	"REFUSED":  dns.RcodeRefused,
+	"YXDOMAIN": dns.RcodeYXDomain,
+	"YXRRSET":  dns.RcodeYXRrset,
+	"NXRRSET":  dns.RcodeNXRrset,
+	"NOTAUTH":  dns.RcodeNotAuth,
+	"NOTZONE":  dns.RcodeNotZone,
 }

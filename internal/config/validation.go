@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -87,6 +88,161 @@ func ValidateRequest(dnsRequest *DNSRequest) error {
 
 	if len(validateErrs) > 0 {
 		return validateErrs
+	}
+
+	return nil
+}
+
+func ValidateResponse(dnsResponse *DNSResponse) error {
+	var validateErrs ValidationErrors
+
+	// HEADER SECTION VALIDATION
+	if _, ok := OpCodeMap[dnsResponse.Header.OpCode]; !ok {
+		validateErrs = append(validateErrs, fmt.Errorf("invalid opcode: %s", dnsResponse.Header.OpCode))
+	}
+
+	if dnsResponse.Header.Z > 7 {
+		validateErrs = append(validateErrs, fmt.Errorf("Z flag must be between 0 and 7, but got %d", dnsResponse.Header.Z))
+	}
+
+	if dnsResponse.Header.RCode > 15 {
+		validateErrs = append(validateErrs, fmt.Errorf("RCode must be between 0 and 15, but got %d", dnsResponse.Header.RCode))
+	}
+
+	// QUESTION SECTION VALIDATION
+	if _, ok := QTypeMap[dnsResponse.Question.Type]; !ok {
+		validateErrs = append(validateErrs, fmt.Errorf("invalid question type: %s", dnsResponse.Question.Type))
+	}
+
+	if _, ok := QClassMap[dnsResponse.Question.Class]; !ok {
+		validateErrs = append(validateErrs, fmt.Errorf("invalid question class: %s", dnsResponse.Question.Class))
+	}
+
+	// ANSWER SECTION VALIDATION - handle multiple answers
+	for i, answer := range dnsResponse.Answers {
+		if err := validateAnswer(&answer, i); err != nil {
+			validateErrs = append(validateErrs, err)
+		}
+	}
+
+	if len(validateErrs) > 0 {
+		return validateErrs
+	}
+
+	return nil
+}
+
+func validateAnswer(answer *Answer, index int) error {
+	// Validate Type
+	if _, ok := QTypeMap[answer.Type]; !ok {
+		return fmt.Errorf("answer[%d]: invalid type: %s", index, answer.Type)
+	}
+
+	// Validate Class
+	if _, ok := QClassMap[answer.Class]; !ok {
+		return fmt.Errorf("answer[%d]: invalid class: %s", index, answer.Class)
+	}
+
+	// Validate TTL
+	if answer.TTL > MaxTTL {
+		return fmt.Errorf("answer[%d]: TTL %d exceeds maximum %d", index, answer.TTL, MaxTTL)
+	}
+
+	// Validate Name (domain name validation)
+	if err := validateDomainName(answer.Name); err != nil {
+		return fmt.Errorf("answer[%d]: invalid name: %w", index, err)
+	}
+
+	// Validate Data based on record type
+	if err := validateAnswerData(answer.Type, answer.Data); err != nil {
+		return fmt.Errorf("answer[%d]: invalid data for type %s: %w", index, answer.Type, err)
+	}
+
+	return nil
+}
+
+func validateDomainName(name string) error {
+	if name == "" {
+		return fmt.Errorf("domain name cannot be empty")
+	}
+
+	if len(name) > MaxDomainNameLength {
+		return fmt.Errorf("domain name too long: %d characters (max %d)", len(name), MaxDomainNameLength)
+	}
+
+	// Split into labels and validate each
+	labels := strings.Split(strings.TrimSuffix(name, "."), ".")
+	for _, label := range labels {
+		if len(label) == 0 {
+			return fmt.Errorf("empty label in domain name")
+		}
+		if len(label) > MaxLabelLength {
+			return fmt.Errorf("label '%s' too long: %d characters (max %d)", label, len(label), MaxLabelLength)
+		}
+
+		// Basic character validation for labels
+		for i, char := range label {
+			if !((char >= 'a' && char <= 'z') ||
+				(char >= 'A' && char <= 'Z') ||
+				(char >= '0' && char <= '9') ||
+				(char == '-' && i != 0 && i != len(label)-1)) { // hyphens not at start/end
+				return fmt.Errorf("invalid character '%c' in label '%s'", char, label)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateAnswerData(recordType, data string) error {
+	if data == "" {
+		return fmt.Errorf("data cannot be empty")
+	}
+
+	switch recordType {
+	case "A":
+		return validateIPv4(data)
+	case "CNAME":
+		return validateDomainName(data)
+	case "TXT":
+		return validateTXTData(data)
+	default:
+		// For other record types, just do basic non-empty validation
+		return nil
+	}
+}
+
+func validateIPv4(ip string) error {
+	parts := strings.Split(ip, ".")
+	if len(parts) != 4 {
+		return fmt.Errorf("invalid IPv4 format: must have 4 octets")
+	}
+
+	for i, part := range parts {
+		if len(part) == 0 {
+			return fmt.Errorf("empty octet at position %d", i+1)
+		}
+
+		// Check for leading zeros (except for "0" itself)
+		if len(part) > 1 && part[0] == '0' {
+			return fmt.Errorf("octet %d has leading zero: %s", i+1, part)
+		}
+
+		if num, err := strconv.Atoi(part); err != nil || num < 0 || num > 255 {
+			return fmt.Errorf("invalid IPv4 octet %d: %s (must be 0-255)", i+1, part)
+		}
+	}
+	return nil
+}
+
+func validateTXTData(data string) error {
+	if len(data) > MaxTXTRecordLength {
+		return fmt.Errorf("TXT data too long: %d characters (max %d)", len(data), MaxTXTRecordLength)
+	}
+
+	// TXT records should not contain null bytes
+	if strings.Contains(data, "\x00") {
+		return fmt.Errorf("TXT data contains null byte")
 	}
 
 	return nil

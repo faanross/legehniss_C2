@@ -7,10 +7,13 @@ import (
 	"net"
 )
 
+var pathToResponseYaml = "./configs/response.yaml"
+
 // DNSServer implements the Server interface for DNS
 type DNSServer struct {
-	addr   string
-	server *dns.Server
+	addr     string
+	server   *dns.Server
+	response config.DNSResponse
 }
 
 // NewDNSServer creates a new DNS server
