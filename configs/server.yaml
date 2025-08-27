@@ -10,6 +10,8 @@ server:
 
   max_workers: 4 # Number of concurrent goroutines processing queries
 
+  worker_channel_buffer_size: 10 # channel buffer size for each worker performing query lookups
+
   read_timeout: 5 # How long to wait for incoming packets (seconds)
 
   write_timeout: 5 # How long to wait when sending responses (seconds)

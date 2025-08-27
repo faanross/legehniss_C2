@@ -49,7 +49,7 @@ func (s *ServerConfig) Validate() error {
 	if s.Port < 1 || s.Port > 65535 {
 		return fmt.Errorf("port %d is not in valid range (1-65535)", s.Port)
 	}
-	
+
 	// Validate worker count
 	if s.MaxWorkers < 1 {
 		return fmt.Errorf("max_workers must be at least 1, got %d", s.MaxWorkers)
@@ -57,6 +57,8 @@ func (s *ServerConfig) Validate() error {
 	if s.MaxWorkers > 1000 {
 		return fmt.Errorf("max_workers %d seems excessive, maximum recommended is 1000", s.MaxWorkers)
 	}
+
+	// NOTE: Not currently validating buffer size, might want to do this
 
 	// Validate timeouts
 	if s.ReadTimeout < 1 {

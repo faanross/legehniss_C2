@@ -15,8 +15,8 @@ import (
 
 // DNSServer implements the Server interface for DNS
 type DNSServer struct {
-	serverConfig config.ServerConfig
-	response     config.DNSResponse
+	serverConfig *config.DNSServerConfig
+	response     *config.DNSResponse
 	conn         *net.UDPConn
 	workers      []worker
 	shutdown     chan struct{}
@@ -39,7 +39,7 @@ type DNSRequest struct {
 }
 
 // NewDNSServer creates a new DNS server
-func NewDNSServer(cfg *config.Config) (*DNSServer, error) {
+func NewDNSServer(cfg *config.Config, sCfg *config.DNSServerConfig) (*DNSServer, error) {
 
 	// (1) read Response yaml-file from disk
 	yamlFile, err := os.ReadFile(cfg.PathToResponseYAML)
@@ -70,10 +70,23 @@ func NewDNSServer(cfg *config.Config) (*DNSServer, error) {
 
 	fmt.Println("✅ DNS response configuration is valid!")
 
-	return &DNSServer{
-		addr:     cfg.ServerAddr,
-		response: dnsResponse,
-	}, nil
+	dnsServer := &DNSServer{
+		serverConfig: sCfg,
+		response:     &dnsResponse,
+		shutdown:     make(chan struct{}),
+	}
+
+	// Create worker pool
+	dnsServer.workers = make([]worker, sCfg.Server.MaxWorkers)
+	for i := 0; i < sCfg.Server.MaxWorkers; i++ {
+		dnsServer.workers[i] = worker{
+			id:       fmt.Sprintf("worker #%d", i),
+			server:   dnsServer,
+			requests: make(chan *DNSRequest, sCfg.Server.WorkerChannelBufferSize),
+		}
+	}
+
+	return dnsServer, nil
 }
 
 // Start implements Server.Start for DNS
