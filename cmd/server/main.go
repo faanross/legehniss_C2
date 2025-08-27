@@ -41,7 +41,7 @@ func main() {
 	fmt.Println("\nConfiguration loaded and validated successfully!")
 
 	// Now, we need to create our SERVER
-	initServer, err := composition.NewServer(mainCfg)
+	initServer, err := composition.NewServer(mainCfg, serverCfg)
 	if err != nil {
 		fmt.Printf("Failed to create server: %v\n", err)
 		os.Exit(1)
