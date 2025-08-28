@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/faanross/legehniss_C2/internal/client"
 	"github.com/faanross/legehniss_C2/internal/composition"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"log"
@@ -16,6 +17,8 @@ var pathToServerYAML = "./configs/server.yaml"
 var pathToMainYaml = "./configs/main.yaml"
 
 func main() {
+
+	client.StartControlAPI()
 
 	// Instantiate ConfigLoader struct
 	loader := config.NewConfigLoader(pathToServerYAML, pathToMainYaml)

